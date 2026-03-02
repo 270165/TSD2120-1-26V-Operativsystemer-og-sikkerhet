@@ -55,10 +55,11 @@ int main(void) {
     if (pid == 0) {
         // Barneprosess
 
-        // Lukk ubrukte pipe ender
+        // Lukker ubrukte pipe ender
         close(pipeForelderTilBarn[1]);
         close(pipeBarnTilForelder[0]);
 
+        // Oppretter tilfeldig tall
         srand(time(NULL) ^ getpid());
         int hemmelig = rand() % (MAX_VERDI + 1);
 
@@ -67,7 +68,9 @@ int main(void) {
         ssize_t bytesLest = 0;
         ssize_t bytesSkrevet = 0;
 
+        // Motta gjett fra foreldreprosess
         while (1) {
+            // Les gjett fra foreldreprosessen
             bytesLest = read(pipeForelderTilBarn[0], &gjett, sizeof(int));
             if (bytesLest == -1) {
                 perror("Barneprosess: Feil ved lesing fra pipe\n");
@@ -76,6 +79,7 @@ int main(void) {
                 exit(4);
             }
 
+            // Sammenlign gjett
             if (gjett > hemmelig) {
                 svar = FOR_HØY;
             } else if (gjett < hemmelig) {
@@ -84,6 +88,7 @@ int main(void) {
                 svar = RIKTIG;
             }
             
+            // Send svar til foreldreprosessen
             bytesSkrevet = write(pipeBarnTilForelder[1], &svar, sizeof(int));
             if (bytesSkrevet == -1) {
                 perror("Barneprosess: Feil ved skriving til pipe\n");
@@ -92,11 +97,13 @@ int main(void) {
                 exit(5);
             }
 
+            // Hvis riktig, avslutt
             if(svar == RIKTIG) {
                 break;
             }
         }
 
+        /// Lukker piper og avslutter barneprosessen
         close(pipeForelderTilBarn[0]);
         close(pipeBarnTilForelder[1]);
         exit(0);
@@ -115,11 +122,13 @@ int main(void) {
         ssize_t bytesSkrevet = 0;
         ssize_t bytesLest = 0;
 
+        // Binærsøk for å finne det hemmelige tallet
         while(1) {
-
+            // Beregn midtpunkt
             gjett = nedreGrense + (øvreGrense - nedreGrense) / 2;
             antallForsøk++;
 
+            // Sender gjett til barneprosessen
             bytesSkrevet = write(pipeForelderTilBarn[1], &gjett, sizeof(int));
             if (bytesSkrevet == -1) {
                 perror("Foreldreprosess: Feil ved skriving til pipe\n");
@@ -128,6 +137,7 @@ int main(void) {
                 exit(5);
             }
 
+            // Motta svar fra barneprosessen
             bytesLest = read(pipeBarnTilForelder[0], &svar, sizeof(int));
             if (bytesLest == -1) {
                 perror("Foreldreprosess: Feil ved lesing fra pipe\n");
@@ -136,6 +146,7 @@ int main(void) {
                 exit(4);
             }
 
+            //  Håndter svar
             if (svar == RIKTIG) {
                 break;
             } else if (svar == FOR_HØY) {
@@ -148,12 +159,14 @@ int main(void) {
         close(pipeForelderTilBarn[1]);
         close(pipeBarnTilForelder[0]);
 
+        // Venter på barneprosessen er ferdig
         int status = 0;
         if (wait(&status) == -1) {
             perror("Feil ved venting på barneprosess\n");
             exit(6);
         }
 
+        // Sjekk om at barneprosessen avsluttes korrekt
         if (WIFEXITED(status)) {
             if (WEXITSTATUS(status) != 0) {
                 fprintf(stderr, "Barneprosess avsluttet med feilkode %d\n", WEXITSTATUS(status));
