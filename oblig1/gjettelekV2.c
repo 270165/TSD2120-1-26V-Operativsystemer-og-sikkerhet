@@ -7,7 +7,6 @@
  * 5 - Skriving til pipe feilet
  * 6 - Venting på barneprosess feilet
  * 7 - Barneprosess avsluttet med feil 
- * 8 - Feil ved lukking av pipes
 */
 
 #include <stdio.h>
@@ -16,8 +15,8 @@
 #include <time.h>
 #include <sys/wait.h>
 
-#define MIN_VERDI 0
-#define MAX_VERDI 1000
+#define MIN_VERDI 1
+#define MAX_VERDI 999 
 #define FOR_HØY 1
 #define RIKTIG 0
 #define FOR_LAV -1
@@ -38,6 +37,12 @@ int main(void) {
     // Opprett pipe fra barn til forelder
     if (pipe(pipeBarnTilForelder) == -1) {
         perror("Feil ved opprettelse av pipe (barn->forelder)");
+        if (close(pipeForelderTilBarn[READ]) == -1) {
+                perror("Feil ved lukking av pipe");
+        } 
+        if (close(pipeForelderTilBarn[WRITE]) == -1) {
+            perror("Feil ved lukking av pipe");
+        }
         exit(3);
     }
 
@@ -46,27 +51,18 @@ int main(void) {
 
     if (pid == -1) {
         perror("Feil ved fork()\n");
-        close(pipeForelderTilBarn[READ]);
         if (close(pipeForelderTilBarn[READ]) == -1) {
             perror("Feil ved lukking av pipe");
-            exit(8);
         }
-        close(pipeForelderTilBarn[WRITE]);
         if (close(pipeForelderTilBarn[WRITE]) == -1) {
             perror("Feil lukking av pipe");
-            exit(8);
         }
-        close(pipeBarnTilForelder[READ]);
         if (close(pipeBarnTilForelder[READ]) == -1) {
             perror("Feil ved lukking av pipe");
-            exit(8);
         }
-        close(pipeBarnTilForelder[WRITE]);
         if (close(pipeBarnTilForelder[WRITE]) == -1) {
-            perror("Feil ved lukking av pipe");
             exit(8);
         }
-
         exit(1);
     }
 
@@ -74,15 +70,13 @@ int main(void) {
         // Barneprosess
 
         // Lukker ubrukte pipe ender
-        close(pipeForelderTilBarn[WRITE]);
-        if (close(pipeForelderTilBarn[WRITE]) == .1) {
+        if (close(pipeForelderTilBarn[WRITE]) == -1) {
             perror("Feil ved lukking av pipe");
-            exit(8);
         }
-        close(pipeBarnTilForelder[READ]);
         if (close(pipeBarnTilForelder[READ]) == -1) {
-            perror("Feil ved lukking av pipe");
-
+            perror("Feil ved lukking av pipe"); 
+        }
+            
         // Oppretter tilfeldig tall
         srand(time(NULL) ^ getpid());
         int hemmelig = rand() % (MAX_VERDI + 1);
@@ -93,21 +87,18 @@ int main(void) {
         ssize_t bytesSkrevet = 0;
 
         // Motta gjett fra foreldreprosess
-        while (1) {
+        do {
             // Les gjett fra foreldreprosessen
-            bytesLest = read(pipeForelderTilBarn[0], &gjett, sizeof(int));
+            bytesLest = read(pipeForelderTilBarn[READ], &gjett, sizeof(int));
             if (bytesLest == -1) {
                 perror("Barneprosess: Feil ved lesing fra pipe\n");
-                close(pipeForelderTilBarn[READ]);
                 if (close(pipeForelderTilBarn[READ]) == -1) {
                     perror("Feil ved lukking av pipe");
-                    exit(8);
                 }
-                close(pipeBarnTilForelder[WRITE]);
                 if (close(pipeBarnTilForelder[WRITE]) == -1) {
                     perror("Feil ved lukking av pipe");
-                    exit(8);
-                exit(4);
+                    exit(4);
+                }
             }
 
             // Sammenlign gjett
@@ -120,34 +111,24 @@ int main(void) {
             }
             
             // Send svar til foreldreprosessen
-            bytesSkrevet = write(pipeBarnTilForelder[1], &svar, sizeof(int));
+            bytesSkrevet = write(pipeBarnTilForelder[WRITE], &svar, sizeof(int));
             if (bytesSkrevet == -1) {
                 perror("Barneprosess: Feil ved skriving til pipe\n");
-                close(pipeForelderTilBarn[READ]);
                 if (close(pipeForelderTilBarn[READ]) == -1) {
                     perror("Feil ved lukking av pipe");
-                    exit(8);
                 }
-                close(pipeBarnTilForelder[WRITE]);
                 if (close(pipeBarnTilForelder[WRITE]) == -1) {
                     perror("Feil ved lukking av pipe");
-                    exit(8);
                 }
                 exit(5);
             }
-
-            // Hvis riktig, avslutt
-            if(svar == RIKTIG) {
-                break;
-            }
+        } while (svar!= RIKTIG);
 
         /// Lukker piper og avslutter barneprosessen
-        close(pipeForelderTilBarn[READ]);
         if (close(pipeForelderTilBarn[READ]) == -1) {
             perror("Feil ved lukking av pipe");
             exit(8);
         }
-        close(pipeBarnTilForelder[WRITE]);
         if (close(pipeBarnTilForelder[WRITE]) == -1) {
             perror("Feil ved lukking pipe");
             exit(8);
@@ -156,15 +137,11 @@ int main(void) {
     } else {
         // Foreldrerposess
         
-        close(pipeForelderTilBarn[READ]);
         if (close(pipeForelderTilBarn[READ]) == -1) {
             perror("Feil ved lukking av pipe");
-            exit(8);
         }
-        close(pipeBarnTilForelder[WRITE]);
         if (close(pipeBarnTilForelder[WRITE]) == -1) {
             perror("Feil ved lukking av pip");
-            exit(8);
         }
 
         int nedreGrense = MIN_VERDI;
@@ -176,41 +153,51 @@ int main(void) {
         ssize_t bytesLest = 0;
 
         // Binærsøk for å finne det hemmelige tallet
-        while(1) {
+        do {
             // Beregn midtpunkt
             gjett = nedreGrense + (øvreGrense - nedreGrense) / 2;
             antallForsøk++;
 
             // Sender gjett til barneprosessen
-            bytesSkrevet = write(pipeForelderTilBarn[1], &gjett, sizeof(int));
+            bytesSkrevet = write(pipeForelderTilBarn[WRITE], &gjett, sizeof(int));
             if (bytesSkrevet == -1) {
                 perror("Foreldreprosess: Feil ved skriving til pipe\n");
-                close(pipeForelderTilBarn[1]);
-                close(pipeBarnTilForelder[0]);
+                if (close(pipeForelderTilBarn[WRITE]) == -1) {
+                        perror("Feil ved lukking av pipe");
+                } 
+                if(close(pipeBarnTilForelder[READ]) == -1) {
+                    perror("Feil ved lukking av pipe");
+                }
                 exit(5);
             }
 
             // Motta svar fra barneprosessen
-            bytesLest = read(pipeBarnTilForelder[0], &svar, sizeof(int));
+            bytesLest = read(pipeBarnTilForelder[READ], &svar, sizeof(int));
             if (bytesLest == -1) {
                 perror("Foreldreprosess: Feil ved lesing fra pipe\n");
-                close(pipeForelderTilBarn[1]);
-                close(pipeBarnTilForelder[0]);
+                if(close(pipeForelderTilBarn[WRITE]) == -1) {
+                    perror("Feil ved lukking av pipe");
+                }
+                if(close(pipeBarnTilForelder[READ]) == -1) {
+                    perror("Feil ved lukking av pipe");
+                }
                 exit(4);
             }
 
             //  Håndter svar
-            if (svar == RIKTIG) {
-                break;
-            } else if (svar == FOR_HØY) {
-                øvreGrense = gjett - 1;
+            if (svar == FOR_HØY) {
+                øvreGrense = gjett -1;
             } else if (svar == FOR_LAV) {
-                nedreGrense = gjett + 1; 
+                nedreGrense = gjett + 1;
             }
-        }
+        } while (svar != RIKTIG);
 
-        close(pipeForelderTilBarn[1]);
-        close(pipeBarnTilForelder[0]);
+        if(close(pipeForelderTilBarn[WRITE]) == -1) {
+            perror("Feil ved lukking av pipe");
+        }
+        if(close(pipeBarnTilForelder[READ]) == -1) {
+            perror("Feil ved lukking av pipe");
+        }
 
         // Venter på barneprosessen er ferdig
         int status = 0;
